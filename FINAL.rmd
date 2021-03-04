@@ -1,0 +1,1318 @@
+---
+title: "FINAL"
+author: "NGUYEN NGOC PHUNG"
+date: "3/2/2021"
+output: html_document
+---
+
+## IMPORT ALL LIBRARIES
+
+```{r}
+#Import all libraries
+library('quantmod')
+library('tidyquant')
+library('rugarch')
+library('copula')
+library('VGAM')
+library('ggplot2')
+library('GoFKernel')
+library('mistr')
+library('tseries')
+library('stats')
+library('fDMA')
+library('corrplot')
+```
+
+## INPUT AND CLEAN THE DATA
+
+```{r}
+CTG_all<-read.csv('C:/Users/Win 10/Documents/RISKY PORTFOLIO/excel_ctg - Copy.csv')
+MSN_all<-read.csv('C:/Users/Win 10/Documents/RISKY PORTFOLIO/excel_msn - Copy.csv')
+VIC_all<-read.csv('C:/Users/Win 10/Documents/RISKY PORTFOLIO/excel_vic - Copy.csv')
+VNM_all<-read.csv('C:/Users/Win 10/Documents/RISKY PORTFOLIO/excel_vnm - Copy.csv')
+
+
+cleandata<-function(df)
+  {
+  names(df)<-c('Ticker','Date','Open','High','Low','Close','Volume')
+  df<-df[,c(2,6)]
+  df <- transform(df, Date = as.Date(as.character(Date), "%Y%m%d"))
+  df<-df[order(as.Date(df$Date, format="%Y%m%d")),]
+  df<-xts(x =df$Close, order.by =df$Date)
+  df
+}
+
+CTG_all<-cleandata(CTG_all)
+MSN_all<-cleandata(MSN_all)
+VIC_all<-cleandata(VIC_all)
+VNM_all<-cleandata(VNM_all)
+
+CTG<-CTG_all["2013-01-01/2019-12-16"]
+MSN<-MSN_all["2013-01-01/2019-12-16"]
+VIC<-VIC_all["2013-01-01/2019-12-16"]
+VNM<-VNM_all["2013-01-01/2019-12-16"]
+
+CTG_test<-CTG_all["2019-12-16/2020-12-17"]
+MSN_test<-MSN_all["2019-12-16/2020-12-17"]
+VIC_test<-VIC_all["2019-12-16/2020-12-17"]
+VNM_test<-VNM_all["2019-12-16/2020-12-17"]
+
+# plot the stock price
+layout(matrix(c(1,2,3,4),2, 2, byrow = TRUE))
+plot(CTG,col="darkorange2",lwd=1.5)
+plot(MSN,col="deeppink3",lwd=1.5)
+plot(VIC,col="red",lwd=1.5)
+plot(VNM,col="blue",lwd=1.5)
+
+layout(matrix(c(1),1,1))
+plot(cbind(CTG,MSN,VIC,VNM),col=c("darkorange2","deeppink3","red","blue"),lwd=1.5)
+```
+
+## GET THE LOG RETURN
+
+```{r}
+#Calculate the log differences price 
+log_diff<-function(x){
+    data=log(x)
+    data_diff=diff(data,differences = 1)
+    data_diff=data_diff[-1,]
+    return(data_diff)
+}
+
+#Get the log-return for each company
+CTG_log_diff<-log_diff(CTG)
+MSN_log_diff<-log_diff(MSN)
+VIC_log_diff<-log_diff(VIC)
+VNM_log_diff<-log_diff(VNM)
+
+CTG_log_diff_test<-log_diff(CTG_test)
+MSN_log_diff_test<-log_diff(MSN_test)
+VIC_log_diff_test<-log_diff(VIC_test)
+VNM_log_diff_test<-log_diff(VNM_test)
+
+#Plot the histogram
+layout(matrix(c(1,2,3,4), 2, 2, byrow = TRUE))
+hist(CTG_log_diff,breaks=50,col="darkorange2")
+hist(MSN_log_diff,breaks=50,col="deeppink3")
+hist(VIC_log_diff,breaks=50,col="red")
+hist(VNM_log_diff,breaks=50,col="blue")
+
+
+#Plot the qq-norm and pp-line
+layout(matrix(c(1,2,3,4), 2, 2, byrow = TRUE))
+
+qqnorm(CTG_log_diff,main='CTG log diff')
+qqline(CTG_log_diff,col="darkorange2")
+
+qqnorm(MSN_log_diff,main='MSN log diff')
+qqline(MSN_log_diff,col="deeppink3")
+
+qqnorm(VIC_log_diff,main='VIC log diff')
+qqline(VIC_log_diff,col="red")
+
+qqnorm(VNM_log_diff,main='VNM log diff')
+qqline(VNM_log_diff,col="blue")
+
+
+#Summary of the log-return for each company
+CTG_sumary<-c(mean(CTG_log_diff),sd(CTG_log_diff),skewness(CTG_log_diff),kurtosis(CTG_log_diff))
+
+MSN_sumary<-c(mean(MSN_log_diff),sd(MSN_log_diff),skewness(MSN_log_diff),kurtosis(MSN_log_diff))
+
+VIC_sumary<-c(mean(VIC_log_diff),sd(VIC_log_diff),skewness(VIC_log_diff),kurtosis(VIC_log_diff))
+
+VNM_sumary<-c(mean(VNM_log_diff),sd(VNM_log_diff),skewness(VNM_log_diff),kurtosis(VNM_log_diff))
+
+
+sumary_return<-cbind(CTG_sumary,MSN_sumary,VIC_sumary,VNM_sumary)
+dimnames(sumary_return)<-list(c("mean","sd","skewness","kurtosis"),c("CTG","MSN","VIC","VNM"))
+sumary_return
+
+
+#Plot the log returns of each company
+layout(matrix(c(1,2,3,4),2,2,byrow=TRUE))
+plot(CTG_log_diff,main='CTG log returns',col="darkorange2",lwd=1.5)
+plot(MSN_log_diff,main='MSN log returns',col="deeppink3",lwd=1.5)
+plot(VIC_log_diff,main='VIC log returns',col="red",lwd=1.5)
+plot(VNM_log_diff,main='VNM log returns',col="blue",lwd=1.5)
+
+
+#Plot the ACF and PACF (auto-correlation function)
+layout(matrix(c(1,2,3,4), 2, 2, byrow = TRUE))
+
+acf(CTG_log_diff,main="ACF (RETURN-CTG)")
+acf(MSN_log_diff,main="ACF (RETURN-MSN)")
+acf(VIC_log_diff,main="ACF (RETURN-VIC)")
+acf(VNM_log_diff,main="ACF (RETURN-VNM)")
+
+pacf(CTG_log_diff,main="PACF (RETURN-CTG)")
+pacf(MSN_log_diff,main="PACF (RETURN-CTG)")
+pacf(VIC_log_diff,main="PACF (RETURN-CTG)")
+pacf(VNM_log_diff,main="PACF (RETURN-CTG)")
+
+```
+
+
+## FIND THE BEST ARMA ORDER WITH SMALLEST AIC (p,q= 0,1,2,3,4)
+```{r}
+# Create a function to find order p,q for ARMA (p,q) with corresponding AIC
+## This function will return order of ARIMA and its AIC in 1 vector
+order_ARMA<-function(p_max,q_max,data)
+{
+  final.aic <- Inf
+final.order <- c(0,0,0)
+for (p in 0:p_max) for (q in 0:q_max) {
+  if ( p == 0 && q == 0) {
+    next
+  }
+  
+  arimaFit = tryCatch( arima(data, order=c(p, 0, q)),error=function( err ) FALSE,warning=function( err ) FALSE )
+  
+  if( !is.logical( arimaFit ) ) {
+    current.aic <- AIC(arimaFit)
+    if (current.aic < final.aic) {
+      final.aic <- current.aic
+      final.order <- c(p, 0, q)
+      final.arima <- arima(data, order=final.order)
+    }
+  } else {
+    next
+  }
+}
+return(c(final.order,final.aic))
+}
+
+#Find order for each company
+order_CTG<-order_ARMA(4,4,CTG_log_diff)
+order_CTG
+order_MSN<-order_ARMA(2,2,MSN_log_diff)
+order_MSN
+order_VIC<-order_ARMA(4,4,VIC_log_diff)
+order_VIC
+order_VNM<-order_ARMA(3,3,VNM_log_diff)
+order_VNM
+```
+
+## FIT THE ARMA-GARCH MODEL
+
+#### CTG COMPANY
+```{r}
+#Fit the garch model to CTG
+garchspec_CTG <- ugarchspec(
+  mean.model=list(armaOrder=c(order_CTG[1],order_CTG[3])),
+  variance.model=list(model="gjrGARCH",garchOrder = c(1, 1)),
+  distribution.model = "sstd")
+garchfit_CTG<-ugarchfit(data=CTG_log_diff,spec=garchspec_CTG)
+coef(garchfit_CTG)
+
+
+#Standardized residuals for CTG
+standardize_residual_CTG<-residuals(garchfit_CTG)/sigma(garchfit_CTG)
+
+# Plotting
+layout(matrix(c(1,2,3,4),2,2,byrow=TRUE))
+acf(standardize_residual_CTG,main="ACF (RESIDUAL-CTG)")
+pacf(standardize_residual_CTG, main="PACF (RESIDUAL-CTG)")
+
+plot(standardize_residual_CTG,main="RESIDUAL-CTG",col="darkorange2",lwd=1)
+qqnorm(standardize_residual_CTG,main="QQ-PLOT CTG")
+qqline(standardize_residual_CTG,col="darkorange2")
+```
+
+#### MSN COMPANY
+```{r}
+#Fit the garch model to MSN
+garchspec_MSN <- ugarchspec(
+  mean.model=list(armaOrder=c(order_MSN[1],order_MSN[3])),
+  variance.model=list(model="gjrGARCH",garchOrder = c(1, 1)),
+  distribution.model = "sstd")
+garchfit_MSN<-ugarchfit(data=MSN_log_diff,spec=garchspec_MSN)
+coef(garchfit_MSN)
+
+#Standardized residuals for MSN
+standardize_residual_MSN<-residuals(garchfit_MSN)/sigma(garchfit_MSN)
+
+# plotting
+layout(matrix(c(1,2,3,4),2,2,byrow=TRUE))
+acf(standardize_residual_MSN,main="ACF (RESIDUAL-MSN)")
+pacf(standardize_residual_MSN,main="PACF (RESIDUAL-MSN)")
+
+plot(standardize_residual_MSN,col="deeppink3",main="RESIDUAL-MSN",lwd=1)
+qqnorm(standardize_residual_MSN,main="QQ-PLOT CTG")
+qqline(standardize_residual_MSN,col="deeppink3")
+```
+
+#### VIC COMPANY
+```{r}
+#Fit the garch model to VIC
+garchspec_VIC <- ugarchspec(
+  mean.model=list(armaOrder=c(order_VIC[1],order_VIC[3])),
+  variance.model=list(model="gjrGARCH",garchOrder = c(1, 1)),
+  distribution.model = "sstd")
+garchfit_VIC<-ugarchfit(data=VIC_log_diff,spec=garchspec_VIC)
+coef(garchfit_VIC)
+
+#Standardized residuals for VIC
+standardize_residual_VIC<-residuals(garchfit_VIC)/sigma(garchfit_VIC)
+
+# Plotting
+layout(matrix(c(1,2,3,4),2,2,byrow=TRUE))
+acf(standardize_residual_VIC,main="ACF (RESIDUAL-VIC)")
+pacf(standardize_residual_VIC,main="PACF (RESIDUAL-VIC)")
+
+plot(standardize_residual_VIC,col="red",main="RESIDUAL-VIC",lwd=1)
+qqnorm(standardize_residual_VIC,main="QQ-PLOT VIC")
+qqline(standardize_residual_VIC,col="red")
+```
+
+#### VNM COMPANY
+```{r}
+#Fit the garch model to VNM
+garchspec_VNM <- ugarchspec(
+  mean.model=list(armaOrder=c(order_VNM[1],order_VNM[3])),
+  variance.model=list(model="gjrGARCH",garchOrder = c(1, 1)),
+  distribution.model = "sstd")
+garchfit_VNM<-ugarchfit(data=VNM_log_diff,spec=garchspec_VNM)
+coef(garchfit_VNM)
+
+#Standardized residuals for MSN
+standardize_residual_VNM<-residuals(garchfit_VNM)/sigma(garchfit_VNM)
+
+# Plotting
+layout(matrix(c(1,2,3,4),2,2,byrow=TRUE))
+acf(standardize_residual_VNM,main="ACF (RESIDUAL-VNM)")
+pacf(standardize_residual_VNM,main="PACF (RESIDUAL-VNM)")
+
+plot(standardize_residual_VNM,col="blue",main="RESIDUAL-VNM",lwd=1)
+qqnorm(standardize_residual_VNM,main="QQ-PLOT VNM")
+qqline(standardize_residual_VNM,col="blue")
+```
+
+```{r}
+# Histogram of each standardized residuals
+layout(matrix(c(1,2,3,4),2,2,byrow=TRUE))
+hist(standardize_residual_CTG,main='CTG standardized residual',breaks=70,col="darkorange2")
+hist(standardize_residual_MSN,main='MSN standardized residual',breaks=70,col="deeppink3")
+hist(standardize_residual_VIC,main='VIC standardized residual',breaks=70,col="red")
+hist(standardize_residual_VNM,main='VNM standardized residual',breaks=70,col="blue")
+```
+
+#### JARQUE-BERA TEST
+
+```{r}
+# JARQUE-BERA TEST
+## Jarque-Bera test for log-return 
+JBtest_CTG_return<-jarque.bera.test(CTG_log_diff)
+JBtest_MSN_return<-jarque.bera.test(MSN_log_diff)
+JBtest_VIC_return<-jarque.bera.test(VIC_log_diff)
+JBtest_VNM_return<-jarque.bera.test(VNM_log_diff)
+
+JBtest_return<-matrix(c(JBtest_CTG_return$statistic,JBtest_CTG_return$p.value,JBtest_MSN_return$statistic,JBtest_MSN_return$p.value,JBtest_VIC_return$statistic,JBtest_VIC_return$p.value,JBtest_VNM_return$statistic,JBtest_VNM_return$p.value),2,4)
+dimnames(JBtest_return)<-list(c("Jarque-Bera TS","Jarque-Bera p-value"),c("CTG","MSN","VIC","VNM"))
+JBtest_return
+```
+
+#### LJUNG-BOX TEST
+```{r}
+# LJUNG BOX TEST
+## LJung- Box test for both log-return and standardized residuals
+LJtest_CTG_return<-Box.test(CTG_log_diff)
+LJtest_MSN_return<-Box.test(MSN_log_diff)
+LJtest_VIC_return<-Box.test(VIC_log_diff)
+LJtest_VNM_return<-Box.test(VNM_log_diff)
+
+LJtest_return<-matrix(c(LJtest_CTG_return$statistic,LJtest_CTG_return$p.value,LJtest_MSN_return$statistic,LJtest_MSN_return$p.value,LJtest_VIC_return$statistic,LJtest_VIC_return$p.value,LJtest_VNM_return$statistic,LJtest_VNM_return$p.value),2,4)
+dimnames(LJtest_return)<-list(c("LJung-Box TS","LJung-Box p-value"),c("CTG","MSN","VIC","VNM"))
+LJtest_return
+
+LJtest_CTG_residual<-Box.test(standardize_residual_CTG)
+LJtest_MSN_residual<-Box.test(standardize_residual_MSN)
+LJtest_VIC_residual<-Box.test(standardize_residual_VIC)
+LJtest_VNM_residual<-Box.test(standardize_residual_VNM)
+
+LJtest_residual<-matrix(c(LJtest_CTG_residual$statistic,LJtest_CTG_residual$p.value,LJtest_MSN_residual$statistic,LJtest_MSN_residual$p.value,LJtest_VIC_residual$statistic,LJtest_VIC_residual$p.value,LJtest_VNM_residual$statistic,LJtest_VNM_residual$p.value),2,4)
+dimnames(LJtest_residual)<-list(c("LJung-Box TS","LJung-Box p-value"),c("CTG","MSN","VIC","VNM"))
+LJtest_residual
+```
+
+#### ENGLE'S ARCH TEST
+```{r}
+# ENGLE'S ARCH TEST
+## Engle's test for both log-return and standardized residuals
+ARCHtest_CTG_return<-archtest(as.vector(CTG_log_diff))
+ARCHtest_MSN_return<-archtest(as.vector(MSN_log_diff))
+ARCHtest_VIC_return<-archtest(as.vector(VIC_log_diff))
+ARCHtest_VNM_return<-archtest(as.vector(VNM_log_diff))
+
+ARCHtest_return<-matrix(c(ARCHtest_CTG_return$statistic,ARCHtest_CTG_return$p.value,ARCHtest_MSN_return$statistic,ARCHtest_MSN_return$p.value,ARCHtest_VIC_return$statistic,ARCHtest_VIC_return$p.value,ARCHtest_VNM_return$statistic,ARCHtest_VNM_return$p.value),2,4)
+dimnames(ARCHtest_return)<-list(c("Engle-ARCH TS","Engle-ARCH p-value"),c("CTG","MSN","VIC","VNM"))
+ARCHtest_return
+
+
+ARCHtest_CTG_residual<-archtest(as.vector(standardize_residual_CTG))
+ARCHtest_MSN_residual<-archtest(as.vector(standardize_residual_MSN))
+ARCHtest_VIC_residual<-archtest(as.vector(standardize_residual_VIC))
+ARCHtest_VNM_residual<-archtest(as.vector(standardize_residual_VNM))
+
+ARCHtest_residual<-matrix(c(ARCHtest_CTG_residual$statistic,ARCHtest_CTG_residual$p.value,ARCHtest_MSN_residual$statistic,ARCHtest_MSN_residual$p.value,ARCHtest_VIC_residual$statistic,ARCHtest_VIC_residual$p.value,ARCHtest_VNM_residual$statistic,ARCHtest_VNM_residual$p.value),2,4)
+dimnames(ARCHtest_residual)<-list(c("Engle-ARCH TS","Engle-ARCH p-value"),c("CTG","MSN","VIC","VNM"))
+
+ARCHtest_residual
+```
+
+
+```{r}
+summary_testing<-rbind(rep(1,4),rep(0,4),c(0,0,0,1),rep(1,4),rep(0,4))
+dimnames(summary_testing)<-list(c("Jarque-Bera test","LJung-Box test (return)","LJung-Box test (residual)","Engle-ARCH test (return)","Engle-ARCH test (residual)"),c("CTG","MSN","VIC","VNM"))
+summary_testing
+```
+
+## PDF FIT OF THE DATA (GENERALIZED PARETO FOR THE TAIL AND NORMAL FOR THE INTERIOR)
+
+```{r}
+x_CTG<-coredata(standardize_residual_CTG)
+x_MSN<-coredata(standardize_residual_MSN)
+x_VIC<-coredata(standardize_residual_VIC)
+x_VNM<-coredata(standardize_residual_VNM)
+```
+
+#### CTG COMPANY
+```{r}
+fit_CTG<-GNG_fit(standardize_residual_CTG, start = c(break1 = -2, break2 =1.5, mean = 0, sd =1,shape1 = 0.1, shape2= 0.1))
+fit_CTG
+plot(fit_CTG)
+```
+
+#### MSN COMPANY
+```{r}
+fit_MSN<-GNG_fit(standardize_residual_MSN, start = c(break1 = -2, break2 =2, mean = 0, sd = 1,shape1 = 0.2, shape2 = 0.1))
+fit_MSN
+plot(fit_MSN)
+
+```
+
+#### VIC COMPANY
+```{r}
+fit_VIC<-GNG_fit(standardize_residual_VIC, start = c(break1 = -2, break2 =1.5, mean = 0, sd = 1,shape1 = 0.15, shape2 = 0.2))
+fit_VIC
+plot(fit_VIC)
+```
+
+#### VNM COMPANY
+```{r}
+fit_VNM<-GNG_fit(standardize_residual_VNM, start = c(break1 = -2, break2 =2, mean = 0 , sd = 1 ,shape1 = 1, shape2 = 0.5))
+fit_VNM
+plot(fit_VNM)
+```
+
+## DEFINE THE PDF AND CDF AND INVERSE CDF 
+
+```{r}
+# CTG
+PDF_CTG<- function(x){d(distribution(fit_CTG),x)}
+CDF_CTG<- function(x){p(distribution(fit_CTG),x)}
+inverse_CDF_CTG<-function(x){q(distribution(fit_CTG),x)}
+
+# MSN
+PDF_MSN<- function(x){d(distribution(fit_MSN),x)}
+CDF_MSN<- function(x){p(distribution(fit_MSN),x)}
+inverse_CDF_MSN<-function(x){q(distribution(fit_MSN),x)}
+
+# VIC
+PDF_VIC<- function(x){d(distribution(fit_VIC),x)}
+CDF_VIC<- function(x){p(distribution(fit_VIC),x)}
+inverse_CDF_VIC<-function(x){q(distribution(fit_VIC),x)}
+
+# VNM
+PDF_VNM<- function(x){d(distribution(fit_VNM),x)}
+CDF_VNM<- function(x){p(distribution(fit_VNM),x)}
+inverse_CDF_VNM<-function(x){q(distribution(fit_VNM),x)}
+```
+
+
+```{r}
+# Plot all the graph
+
+# DENSITY DISTRIBUTION FUNCTION
+layout(matrix(c(1,2,3,4),2,2,byrow = TRUE))
+curve(PDF_CTG,-3,3,col="darkorange2")
+curve(PDF_MSN,-3,3,col="deeppink3")
+curve(PDF_VIC,-3,3,col="red")
+curve(PDF_VNM,-3,3,col="blue")
+
+# CUMMULATIVE DISTRIBUTION FUNCTION
+layout(matrix(c(1,2,3,4),2,2,byrow = TRUE))
+curve(CDF_CTG,-3,3,col="darkorange2")
+curve(CDF_MSN,-3,3,col="deeppink3")
+curve(CDF_VIC,-3,3,col="red")
+curve(CDF_VNM,-3,3,col="blue")
+
+# INVERSE CDF FUNCTION
+layout(matrix(c(1,2,3,4),2,2,byrow = TRUE))
+curve(inverse_CDF_CTG,col="darkorange2")
+curve(inverse_CDF_MSN,col="deeppink3")
+curve(inverse_CDF_VIC,col="red")
+curve(inverse_CDF_VNM,col="blue")
+
+layout(matrix(c(1,2,1,2),2,2,byrow=TRUE))
+hist(standardize_residual_CTG,breaks=70,col="darkorange2", freq = FALSE)
+lines(density(standardize_residual_CTG,adjust=1),lwd=2,col="chartreuse2")
+curve(PDF_CTG,-3,3,add = TRUE,lwd=2)
+hist(standardize_residual_MSN,breaks=70,col="deeppink3", freq = FALSE)
+lines(density(standardize_residual_MSN,adjust=1),lwd=2,col="chartreuse2")
+curve(PDF_MSN,-3,3,add = TRUE,lwd=2)
+hist(standardize_residual_VIC,breaks=70,col="red", freq = FALSE)
+lines(density(standardize_residual_VIC,adjust=1),lwd=2,col="chartreuse2")
+curve(PDF_VIC,-3,3,add = TRUE,lwd=2)
+hist(standardize_residual_VNM,breaks=70,col="blue", freq = FALSE)
+lines(density(standardize_residual_VNM,adjust=1),lwd=2,col="chartreuse2")
+curve(PDF_VNM,-3,3,add = TRUE,lwd=2)
+```
+
+## PREDICTING BY ROLLING THE DATA
+
+```{r}
+CTG_all<-CTG_all["2013-01-01/2020-12-17"]
+MSN_all<-MSN_all["2013-01-01/2020-12-17"]
+VIC_all<-VIC_all["2013-01-01/2020-12-17"]
+VNM_all<-VNM_all["2013-01-01/2020-12-17"]
+
+CTG_all_log_diff<-log_diff(CTG_all)
+MSN_all_log_diff<-log_diff(MSN_all)
+VIC_all_log_diff<-log_diff(VIC_all)
+VNM_all_log_diff<-log_diff(VNM_all)
+```
+
+```{r}
+## CTG company
+garchroll_CTG <- ugarchroll(garchspec_CTG, data = CTG_all_log_diff , 
+        n.start = 1706, refit.window = "moving",  refit.every = 10)
+preds_CTG<-as.data.frame(garchroll_CTG)
+preds_CTG_mu<-as.xts(preds_CTG$Mu,order.by=index(CTG_log_diff_test))
+preds_CTG_sigma<-as.xts(preds_CTG$Sigma,order.by=index(CTG_log_diff_test))
+
+layout(matrix(c(1,2,1,2),2,2))
+plot(cbind(preds_CTG_sigma,CTG_log_diff_test),col=c("black","darkorange2"))
+plot(cbind(preds_CTG_mu,CTG_log_diff_test),col=c("black","darkorange2"))
+```
+
+```{r}
+## MSN company
+garchroll_MSN <- ugarchroll(garchspec_MSN, data = MSN_all_log_diff , 
+        n.start = 1706, refit.window = "moving",  refit.every = 10)
+preds_MSN<-as.data.frame(garchroll_MSN)
+preds_MSN_mu<-as.xts(preds_MSN$Mu,order.by=index(MSN_log_diff_test))
+preds_MSN_sigma<-as.xts(preds_MSN$Sigma,order.by=index(MSN_log_diff_test))
+
+layout(matrix(c(1,2,1,2),2,2))
+plot(cbind(preds_MSN_sigma,MSN_log_diff_test),col=c("black","deeppink3"))
+plot(cbind(preds_MSN_mu,MSN_log_diff_test),col=c("black","deeppink3"))
+```
+
+```{r}
+## VIC company
+garchroll_VIC <- ugarchroll(garchspec_VIC, data = VIC_all_log_diff , 
+        n.start = 1706, refit.window = "moving",  refit.every = 10)
+preds_VIC<-as.data.frame(garchroll_VIC)
+preds_VIC_mu<-as.xts(preds_VIC$Mu,order.by=index(VIC_log_diff_test))
+preds_VIC_sigma<-as.xts(preds_VIC$Sigma,order.by=index(VIC_log_diff_test))
+
+layout(matrix(c(1,2,1,2),2,2))
+plot(cbind(preds_VIC_sigma,VIC_log_diff_test),col=c("black","red"))
+plot(cbind(preds_VIC_mu,VIC_log_diff_test),col=c("black","red"))
+```
+
+```{r}
+## VNM company
+garchroll_VNM <- ugarchroll(garchspec_VNM, data = VNM_all_log_diff , 
+        n.start = 1706, refit.window = "moving",  refit.every = 10)
+preds_VNM<-as.data.frame(garchroll_VNM)
+preds_VNM_mu<-as.xts(preds_VNM$Mu,order.by=index(VNM_log_diff_test))
+preds_VNM_sigma<-as.xts(preds_VNM$Sigma,order.by=index(VNM_log_diff_test))
+
+layout(matrix(c(1,2,1,2),2,2))
+plot(cbind(preds_VNM_sigma,VNM_log_diff_test),col=c("black","blue"))
+plot(cbind(preds_VNM_mu,VNM_log_diff_test),col=c("black","blue"))
+```
+
+## TRANSFORM STANDARDIZED RESIDUALS TO THE COPULA SCALE (U DATA)
+
+```{r}
+U_CTG<-CDF_CTG(standardize_residual_CTG)
+U_MSN<-CDF_MSN(standardize_residual_MSN)
+U_VIC<-CDF_VIC(standardize_residual_VIC)
+U_VNM<-CDF_VNM(standardize_residual_VNM)
+
+data_SD<-cbind(x_CTG,x_MSN,x_VIC,x_VNM)
+data<-cbind(U_CTG,U_MSN,U_VIC,U_VNM)
+
+layout(matrix(c(1),1,1))
+col<-matrix(1,4,4)
+diag(col)<-NA
+splom2(data_SD,col.mat=col)
+splom2(data,pch="*",col.mat=col)
+
+```
+
+## DEPENDENCE MEASURE BY SPEARMAN RHO AND KENDALL TAU
+
+```{r}
+# Find the correlation between Apple and Facebook by Spearman's rho
+rho   <- cor(data, method = "spearman")
+rho 
+
+# Find the correlation between Apple and Facebook by Kendall tau
+kendall<-cor(data, method = "kendall")
+kendall
+
+layout(matrix(c(1,1,2,2),2,2))
+corrplot(rho,method="color",main="SPEARMAN RHO")
+corrplot(kendall,method="color",main="KENDALL TAU")
+```
+
+## FIT THE COPULA TO THE DATA AND FIND COPULA PARAMETERS
+
+#### Gaussian Copula
+```{r}
+# we fit all the Copula by Maximum likelihood method (ml)
+X<-as.matrix(data)
+fit_Gaussian <- fitCopula(normalCopula(dim=4), X, method = 'ml')
+summary(fit_Gaussian)
+coef(fit_Gaussian)
+```
+
+#### t-Student Copula
+```{r}
+fit_tStudent <- fitCopula(tCopula(dim=4),X, method = 'ml')
+summary(fit_tStudent)
+coef(fit_tStudent)
+```
+
+#### Clayton Copula
+```{r}
+fit_Clayton <- fitCopula(claytonCopula(dim=4), X, method = 'itau')
+summary(fit_Clayton)
+coef(fit_Clayton)
+```
+
+#### Gumbel Copula
+```{r}
+fit_Gumbel <- fitCopula(gumbelCopula(dim=4), X, method = 'itau')
+summary(fit_Gumbel)
+coef(fit_Gumbel)
+```
+
+#### Frank Copula
+```{r}
+fit_Frank <- fitCopula(frankCopula(dim=4), X, method = 'itau')
+summary(fit_Frank)
+coef(fit_Frank)
+```
+
+## CONSTRUCT THE COPULA 
+
+```{r}
+## Note: 
+## Sigma of Gaussian Copula and T-Student Copula should be around 0.205-0.2465 
+## Tau value of Clayton, Gumbel and Frank Copula should be around 0.138-0.165
+
+# Gaussian Copula
+Gaussian_model<-normalCopula(coef(fit_Gaussian) ,dim=4)
+getSigma(Gaussian_model)
+
+# Student T Copula
+T_model<-tCopula(coef(fit_tStudent)[1] ,dim=4,df=coef(fit_tStudent)[2])
+getSigma(T_model)
+
+# Clayton Copula
+Clayton_model<-claytonCopula(coef(fit_Clayton),dim=4)
+tau(Clayton_model)
+
+# Gumbel Copula
+Gumbel_model<-gumbelCopula( coef(fit_Gumbel),dim=4)
+tau(Gumbel_model)
+
+# Frank Copula
+Frank_model<-frankCopula(coef(fit_Frank),dim=4)
+tau(Frank_model)
+
+```
+
+## SIMULATION OF EACH TYPE OF COPULA
+
+```{r}
+n=10000
+m=nrow(CTG_log_diff_test)
+
+# Gaussian Copula
+CTG_matrix_G=MSN_matrix_G=VIC_matrix_G=VNM_matrix_G<-matrix(rep(0,n*m),nrow=m)
+
+# T-Student Copula
+CTG_matrix_T=MSN_matrix_T=VIC_matrix_T=VNM_matrix_T<-matrix(rep(0,n*m),nrow=m)
+
+# Clayton Copula
+CTG_matrix_C=MSN_matrix_C=VIC_matrix_C=VNM_matrix_C<-matrix(rep(0,n*m),nrow=m)
+
+# Gumbel Copula
+CTG_matrix_Gum=MSN_matrix_Gum=VIC_matrix_Gum=VNM_matrix_Gum<-matrix(rep(0,n*m),nrow=m)
+
+# Frank Copula
+CTG_matrix_F=MSN_matrix_F=VIC_matrix_F=VNM_matrix_F<-matrix(rep(0,n*m),nrow=m)
+```
+
+#### GAUSSIAN COPULA
+```{r}
+Gaussian_model<-normalCopula(coef(fit_Gaussian) ,dim=4)
+for(i in 1:n){
+    set.seed(i)
+    U<- rCopula(m, copula = Gaussian_model)
+    CTG_matrix_G[,i]<-inverse_CDF_CTG(U[,1])
+    MSN_matrix_G[,i]<-inverse_CDF_MSN(U[,2])
+    VIC_matrix_G[,i]<-inverse_CDF_VIC(U[,3])
+    VNM_matrix_G[,i]<-inverse_CDF_VNM(U[,4])
+}
+
+# Turn to xts objects
+SR_CTG_G<-xts(x =CTG_matrix_G,order.by=index(CTG_log_diff_test))
+SR_MSN_G<-xts(x =MSN_matrix_G,order.by=index(MSN_log_diff_test))
+SR_VIC_G<-xts(x =VIC_matrix_G,order.by=index(VIC_log_diff_test))
+SR_VNM_G<-xts(x =VNM_matrix_G,order.by=index(VNM_log_diff_test))
+```
+
+```{r}
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(SR_CTG_G[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-CTG (Gaussian)",lwd=0.5)
+plot(SR_MSN_G[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-MSN (Gaussian)",lwd=0.5)
+plot(SR_VIC_G[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-VIC (Gaussian)",lwd=0.5)
+plot(SR_VNM_G[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-VNM (Gaussian)",lwd=0.5)
+```
+
+#### T-STUDENT COPULA
+```{r}
+T_model<-tCopula(coef(fit_tStudent)[1] ,dim=4,df=coef(fit_tStudent)[2])
+for(i in 1:n){
+    set.seed(i)
+    U<- rCopula(m, copula = T_model)
+    CTG_matrix_T[,i]<-inverse_CDF_CTG(U[,1])
+    MSN_matrix_T[,i]<-inverse_CDF_MSN(U[,2])
+    VIC_matrix_T[,i]<-inverse_CDF_VIC(U[,3])
+    VNM_matrix_T[,i]<-inverse_CDF_VNM(U[,4])
+}
+
+# Turn to xts objects
+SR_CTG_T<-xts(x =CTG_matrix_T,order.by=index(CTG_log_diff_test))
+SR_MSN_T<-xts(x =MSN_matrix_T,order.by=index(MSN_log_diff_test))
+SR_VIC_T<-xts(x =VIC_matrix_T,order.by=index(VIC_log_diff_test))
+SR_VNM_T<-xts(x =VNM_matrix_T,order.by=index(VNM_log_diff_test))
+```
+
+```{r}
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(SR_CTG_T[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-CTG (T-Student)",lwd=0.5)
+plot(SR_MSN_T[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-MSN (T-Student)",lwd=0.5)
+plot(SR_VIC_T[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-VIC (T-Student)",lwd=0.5)
+plot(SR_VNM_T[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-VNM (T-Student)",lwd=0.5)
+```
+
+#### CLAYTON COPULA
+```{r}
+Clayton_model<-claytonCopula(coef(fit_Clayton),dim=4)
+for(i in 1:n){
+  set.seed(i)
+    U<- rCopula(m, copula = Clayton_model)
+    CTG_matrix_C[,i]<-inverse_CDF_CTG(U[,1])
+    MSN_matrix_C[,i]<-inverse_CDF_MSN(U[,2])
+    VIC_matrix_C[,i]<-inverse_CDF_VIC(U[,3])
+    VNM_matrix_C[,i]<-inverse_CDF_VNM(U[,4])
+}
+
+# Turn to xts objects
+SR_CTG_C<-xts(x =CTG_matrix_C,order.by=index(CTG_log_diff_test))
+SR_MSN_C<-xts(x =MSN_matrix_C,order.by=index(MSN_log_diff_test))
+SR_VIC_C<-xts(x =VIC_matrix_C,order.by=index(VIC_log_diff_test))
+SR_VNM_C<-xts(x =VNM_matrix_C,order.by=index(VNM_log_diff_test))
+```
+
+```{r}
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(SR_CTG_C[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-CTG (Clayton)",lwd=0.5)
+plot(SR_MSN_C[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-MSN (Clayton)",lwd=0.5)
+plot(SR_VIC_C[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-VIC (Clayton)",lwd=0.5)
+plot(SR_VNM_C[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-VNM (Clayton)",lwd=0.5)
+```
+
+#### GUMBEL COPULA
+```{r}
+Gumbel_model<-gumbelCopula( coef(fit_Gumbel),dim=4)
+for(i in 1:n){
+    set.seed(i)
+    U<- rCopula(m, copula = Gumbel_model)
+    CTG_matrix_Gum[,i]<-inverse_CDF_CTG(U[,1])
+    MSN_matrix_Gum[,i]<-inverse_CDF_MSN(U[,2])
+    VIC_matrix_Gum[,i]<-inverse_CDF_VIC(U[,3])
+    VNM_matrix_Gum[,i]<-inverse_CDF_VNM(U[,4])
+}
+
+# Turn to xts objects
+SR_CTG_Gum<-xts(x =CTG_matrix_Gum,order.by=index(CTG_log_diff_test))
+SR_MSN_Gum<-xts(x =MSN_matrix_Gum,order.by=index(MSN_log_diff_test))
+SR_VIC_Gum<-xts(x =VIC_matrix_Gum,order.by=index(VIC_log_diff_test))
+SR_VNM_Gum<-xts(x =VNM_matrix_Gum,order.by=index(VNM_log_diff_test))
+```
+
+```{r}
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(SR_CTG_Gum[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-CTG (Gumbel)",lwd=0.5)
+plot(SR_MSN_Gum[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-MSN (Gumbel)",lwd=0.5)
+plot(SR_VIC_Gum[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-VIC (Gumbel)",lwd=0.5)
+plot(SR_VNM_Gum[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-VNM (Gumbel)",lwd=0.5)
+```
+
+#### FRANK COPULA
+```{r}
+Frank_model<-frankCopula(coef(fit_Frank),dim=4)
+for(i in 1:n){
+    set.seed(i)
+    U<- rCopula(m, copula = Frank_model)
+    CTG_matrix_F[,i]<-inverse_CDF_CTG(U[,1])
+    MSN_matrix_F[,i]<-inverse_CDF_MSN(U[,2])
+    VIC_matrix_F[,i]<-inverse_CDF_VIC(U[,3])
+    VNM_matrix_F[,i]<-inverse_CDF_VNM(U[,4])
+}
+
+# Turn to xts objects
+SR_CTG_F<-xts(x =CTG_matrix_F,order.by=index(CTG_log_diff_test))
+SR_MSN_F<-xts(x =MSN_matrix_F,order.by=index(MSN_log_diff_test))
+SR_VIC_F<-xts(x =VIC_matrix_F,order.by=index(VIC_log_diff_test))
+SR_VNM_F<-xts(x =VNM_matrix_F,order.by=index(VNM_log_diff_test))
+```
+
+```{r}
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(SR_CTG_F[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-CTG (Frank)",lwd=0.5)
+plot(SR_MSN_F[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-MSN (Frank)",lwd=0.5)
+plot(SR_VIC_F[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-VIC (Frank)",lwd=0.5)
+plot(SR_VNM_F[,1:500],ylim=c(-7,7),main="Simulated S.RESIDUAL-VNM (Frank)",lwd=0.5)
+```
+
+## TURN STANDARDIZED RESIDUAL TO LOG-RETURN (REINTRODUCE ARMA-GARCH MODEL)
+
+```{r}
+# Create a function to turn standardized residual to log-return
+turn_to_log <- function(pred_model,SR ,sigma_model)
+  {
+sigma_matrix<-coredata(sigma_model)
+diagonal_sigma<-diag(as.numeric(sigma_matrix),nrow=length(sigma_matrix))
+simulated_residuals<-diagonal_sigma%*%SR
+simulated_log_returns<-simulated_residuals+matrix(rep(as.numeric(coredata(pred_model)),ncol(simulated_residuals)),ncol=ncol(simulated_residuals))
+simulated_log_returns<-xts(simulated_log_returns,order.by=index(sigma_model))
+simulated_log_returns
+}
+
+```
+
+#### Gaussian Copula
+```{r}
+return_CTG_G<- turn_to_log(preds_CTG_mu,SR_CTG_G,preds_CTG_sigma)
+return_MSN_G<- turn_to_log(preds_MSN_mu,SR_MSN_G,preds_MSN_sigma)
+return_VIC_G<- turn_to_log(preds_VIC_mu,SR_VIC_G,preds_VIC_sigma)
+return_VNM_G<- turn_to_log(preds_VNM_mu,SR_VNM_G,preds_VNM_sigma)
+```
+```{r}
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(return_CTG_G[,1:500],main="Simulated RETURN-CTG (Gaussian)",lwd=0.5)
+plot(return_MSN_G[,1:500],main="Simulated RETURN-MSN (Gaussian)",lwd=0.5)
+plot(return_VIC_G[,1:500],main="Simulated RETURN-VIC (Gaussian)",lwd=0.5)
+plot(return_VNM_G[,1:500],main="Simulated RETURN-VNM (Gaussian)",lwd=0.5)
+```
+
+#### T-student Copula
+```{r}
+return_CTG_T<- turn_to_log(preds_CTG_mu,SR_CTG_T,preds_CTG_sigma)
+return_MSN_T<- turn_to_log(preds_MSN_mu,SR_MSN_T,preds_MSN_sigma)
+return_VIC_T<- turn_to_log(preds_VIC_mu,SR_VIC_T,preds_VIC_sigma)
+return_VNM_T<- turn_to_log(preds_VNM_mu,SR_VNM_T,preds_VNM_sigma)
+```
+
+```{r}
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(return_CTG_T[,1:500],main="Simulated RETURN-CTG (T-Student)",lwd=0.5)
+plot(return_MSN_T[,1:500],main="Simulated RETURN-MSN (T-Student)",lwd=0.5)
+plot(return_VIC_T[,1:500],main="Simulated RETURN-VIC (T-Student)",lwd=0.5)
+plot(return_VNM_T[,1:500],main="Simulated RETURN-VNM (T-Student)",lwd=0.5)
+```
+
+#### Clayton Copula
+```{r}
+return_CTG_C<- turn_to_log(preds_CTG_mu,SR_CTG_C,preds_CTG_sigma)
+return_MSN_C<- turn_to_log(preds_MSN_mu,SR_MSN_C,preds_MSN_sigma)
+return_VIC_C<- turn_to_log(preds_VIC_mu,SR_VIC_C,preds_VIC_sigma)
+return_VNM_C<- turn_to_log(preds_VNM_mu,SR_VNM_C,preds_VNM_sigma)
+```
+
+```{r}
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(return_CTG_C[,1:500],main="Simulated RETURN-CTG (Clayton)",lwd=0.5)
+plot(return_MSN_C[,1:500],main="Simulated RETURN-MSN (Clayton)",lwd=0.5)
+plot(return_VIC_C[,1:500],main="Simulated RETURN-VIC (Clayton)",lwd=0.5)
+plot(return_VNM_C[,1:500],main="Simulated RETURN-VNM (Clayton)",lwd=0.5)
+```
+
+#### Gumbel Copula
+```{r}
+return_CTG_Gum<- turn_to_log(preds_CTG_mu,SR_CTG_Gum,preds_CTG_sigma)
+return_MSN_Gum<- turn_to_log(preds_MSN_mu,SR_MSN_Gum,preds_MSN_sigma)
+return_VIC_Gum<- turn_to_log(preds_VIC_mu,SR_VIC_Gum,preds_VIC_sigma)
+return_VNM_Gum<- turn_to_log(preds_VNM_mu,SR_VNM_Gum,preds_VNM_sigma)
+```
+
+```{r}
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(return_CTG_Gum[,1:500],main="Simulated RETURN-CTG (Gumbel)",lwd=0.5)
+plot(return_MSN_Gum[,1:500],main="Simulated RETURN-MSN (Gumbel)",lwd=0.5)
+plot(return_VIC_Gum[,1:500],main="Simulated RETURN-VIC (Gumbel)",lwd=0.5)
+plot(return_VNM_Gum[,1:500],main="Simulated RETURN-VNM (Gumbel)",lwd=0.5)
+```
+
+#### Frank Copula
+```{r}
+return_CTG_F<- turn_to_log(preds_CTG_mu,SR_CTG_F,preds_CTG_sigma)
+return_MSN_F<- turn_to_log(preds_MSN_mu,SR_MSN_F,preds_MSN_sigma)
+return_VIC_F<- turn_to_log(preds_VIC_mu,SR_VIC_F,preds_VIC_sigma)
+return_VNM_F<- turn_to_log(preds_VNM_mu,SR_VNM_F,preds_VNM_sigma)
+```
+
+```{r}
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(return_CTG_F[,1:500],main="Simulated RETURN-CTG (Frank)",lwd=0.5)
+plot(return_MSN_F[,1:500],main="Simulated RETURN-MSN (Frank)",lwd=0.5)
+plot(return_VIC_F[,1:500],main="Simulated RETURN-VIC (Frank)",lwd=0.5)
+plot(return_VNM_F[,1:500],main="Simulated RETURN-VNM (Frank)",lwd=0.5)
+```
+
+## VAR CALCULAION
+
+```{r}
+weight<-c(0.25,0.25,0.25,0.25)
+
+real_port_return<-(weight[1]*CTG_log_diff_test)+(weight[2]*MSN_log_diff_test)+(weight[3]*VIC_log_diff_test)+(weight[4]*VNM_log_diff_test)
+
+# Plotting
+layout(matrix(c(1),1,1))
+plot(real_port_return,main="REAL PORTFOLIO RETURN",lwd=1)
+```
+
+#### Gaussian Copula
+```{r}
+# Calculate simulated portfolio return
+port_return_G<-weight[1]*return_CTG_G +weight[2]*return_MSN_G +weight[3]*return_VIC_G +weight[4]*return_VNM_G
+
+# VaR 99
+VaR99_return_G<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_G)))
+for(i in 1:m){
+VaR99_return_G[i,]<-quantile(port_return_G[i,],p=0.01)
+}
+
+# VaR 95
+VaR95_return_G<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_G)))
+for(i in 1:m){
+VaR95_return_G[i,]<-quantile(port_return_G[i,],p=0.05)
+}
+
+# VaR 90
+VaR90_return_G<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_G)))
+for(i in 1:m){
+VaR90_return_G[i,]<-quantile(port_return_G[i,],p=0.1)
+}
+
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(port_return_G,ylim=c(-0.1,0.15),main="Simulated port_return (Gaussian)",lwd=0.5)
+VaRplot(0.01,real_port_return,VaR99_return_G)
+VaRplot(0.05,real_port_return,VaR95_return_G)
+VaRplot(0.1,real_port_return,VaR90_return_G)
+
+layout(matrix(c(1),1,1))
+plot(cbind(real_port_return,VaR99_return_G,VaR95_return_G,VaR90_return_G),ylim=c(-0.07,0.06),col=c("black","deeppink3","darkorange2","blue"),main="GAUSSIAN COPULA",lwd=1)
+addLegend("topright", c("True return", "VaR 99%","VaR 95%","VaR 90%"),
+       c("black","deeppink3","darkorange2","blue"), lty=1, cex=0.7)
+```
+
+
+#### T_Student Copula
+```{r}
+# Calculate simulated portfolio return
+port_return_T<-weight[1]*return_CTG_T +weight[2]*return_MSN_T +weight[3]*return_VIC_T +weight[4]*return_VNM_T
+
+# VaR 99
+VaR99_return_T<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_T)))
+for(i in 1:m){
+VaR99_return_T[i,]<-quantile(port_return_T[i,],p=0.01)
+}
+
+# VaR 95
+VaR95_return_T<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_T)))
+for(i in 1:m){
+VaR95_return_T[i,]<-quantile(port_return_T[i,],p=0.05)
+}
+
+# VaR 90
+VaR90_return_T<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_T)))
+for(i in 1:m){
+VaR90_return_T[i,]<-quantile(port_return_T[i,],p=0.1)
+}
+
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(port_return_T,ylim=c(-0.1,0.1),main="Simulated port_return (T-Student)",lwd=0.5)
+VaRplot(0.01,real_port_return,VaR99_return_T)
+VaRplot(0.05,real_port_return,VaR95_return_T)
+VaRplot(0.1,real_port_return,VaR90_return_T)
+layout(matrix(c(1),1,1))
+plot(cbind(real_port_return,VaR99_return_T,VaR95_return_T,VaR90_return_T),col=c("black","deeppink3","darkorange2","blue"),main="T-STUDENT COPULA",lwd=1)
+```
+
+#### Clayton Copula
+```{r}
+# Calculate simulated portfolio return
+port_return_C<-weight[1]*return_CTG_C +weight[2]*return_MSN_C +weight[3]*return_VIC_C +weight[4]*return_VNM_C
+
+# VaR 99
+VaR99_return_C<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_C)))
+for(i in 1:m){
+VaR99_return_C[i,]<-quantile(port_return_C[i,],p=0.01)
+}
+
+# VaR 95
+VaR95_return_C<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_C)))
+for(i in 1:m){
+VaR95_return_C[i,]<-quantile(port_return_C[i,],p=0.05)
+}
+
+# VaR 90
+VaR90_return_C<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_C)))
+for(i in 1:m){
+VaR90_return_C[i,]<-quantile(port_return_C[i,],p=0.1)
+}
+
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(port_return_C,ylim=c(-0.13,0.1),main="Simulated port_return (Clayton)",lwd=0.5)
+VaRplot(0.01,real_port_return,VaR99_return_C)
+VaRplot(0.05,real_port_return,VaR95_return_C)
+VaRplot(0.1,real_port_return,VaR90_return_C)
+layout(matrix(c(1),1,1))
+plot(cbind(real_port_return,VaR99_return_C,VaR95_return_C,VaR90_return_C),col=c("black","deeppink3","darkorange2","blue"),main="CLAYTON COPULA",lwd=1)
+```
+
+
+#### Gumbel Copula
+```{r}
+# Calculate simulated portfolio return
+port_return_Gum<-weight[1]*return_CTG_Gum +weight[2]*return_MSN_Gum +weight[3]*return_VIC_Gum +weight[4]*return_VNM_Gum
+
+# VaR 99
+VaR99_return_Gum<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_Gum)))
+for(i in 1:m){
+VaR99_return_Gum[i,]<-quantile(port_return_Gum[i,],p=0.01)
+}
+
+# VaR 95
+VaR95_return_Gum<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_Gum)))
+for(i in 1:m){
+VaR95_return_Gum[i,]<-quantile(port_return_Gum[i,],p=0.05)
+}
+
+# VaR 90
+VaR90_return_Gum<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_Gum)))
+for(i in 1:m){
+VaR90_return_Gum[i,]<-quantile(port_return_Gum[i,],p=0.1)
+}
+
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(port_return_Gum,ylim=c(-0.1,0.17),main="Simulated port_return (Gumbel)",lwd=0.5)
+VaRplot(0.01,real_port_return,VaR99_return_Gum)
+VaRplot(0.05,real_port_return,VaR95_return_Gum)
+VaRplot(0.1,real_port_return,VaR90_return_Gum)
+layout(matrix(c(1),1,1))
+plot(cbind(real_port_return,VaR99_return_Gum,VaR95_return_Gum,VaR90_return_Gum),col=c("black","deeppink3","darkorange2","blue"),main="GUMBEL COPULA",lwd=1)
+```
+
+
+#### Frank Copula
+```{r}
+# Calculate simulated portfolio return
+port_return_F<-weight[1]*return_CTG_F +weight[2]*return_MSN_F +weight[3]*return_VIC_F +weight[4]*return_VNM_F
+
+# VaR 99
+VaR99_return_F<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_F)))
+for(i in 1:m){
+VaR99_return_F[i,]<-quantile(port_return_F[i,],p=0.01)
+}
+
+# VaR 95
+VaR95_return_F<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_F)))
+for(i in 1:m){
+VaR95_return_F[i,]<-quantile(port_return_F[i,],p=0.05)
+}
+
+# VaR 90
+VaR90_return_F<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_F)))
+for(i in 1:m){
+VaR90_return_F[i,]<-quantile(port_return_F[i,],p=0.1)
+}
+
+# Plotting
+layout(matrix(c(1,2,1,2),2,2))
+plot(port_return_F,ylim=c(-0.08,0.1),main="Simulated port_return (Frank)",lwd=0.5)
+VaRplot(0.01,real_port_return,VaR99_return_F)
+VaRplot(0.05,real_port_return,VaR95_return_F)
+VaRplot(0.1,real_port_return,VaR90_return_F)
+layout(matrix(c(1),1,1))
+plot(cbind(real_port_return,VaR99_return_F,VaR95_return_F,VaR90_return_F),col=c("black","deeppink3","darkorange2","blue"),main="FRANK COPULA",lwd=1)
+```
+
+#### PLOTTING OF VAR 99%, 95% AND 90% BY EACH TYPE OF COPULA
+```{r}
+# Plotting for each vaR 99%, 95% and 90%
+
+## black: real portfolio loss
+## blue:  VaR (Gaussuan Copula)
+## pink:  VaR (T-Student Copula)
+## orange:VaR (Clayton Copula)
+## red:   VaR (Gumbel Copula)
+## purple:VaR (Frank Copula)
+
+layout(matrix(c(1),1,1))
+
+# VaR 99%
+plot(plot(cbind(real_port_return,VaR99_return_G,VaR99_return_T,VaR99_return_C,VaR99_return_Gum,VaR99_return_F),ylim=c(-0.08,0.06),col=c("black","blue","pink","darkorange2","red","darkmagenta"),main="VAR 99%",lwd=1))
+addLegend("topright",c("True return", "Gaussian VaR","t-Student VaR","Clayton VaR","Gumbel VaR","Frank VaR"),
+       c("black","blue","deeppink3","darkorange2","red","darkmagenta"), lty=1, cex=0.7)
+# VaR 95%
+plot(plot(cbind(real_port_return,VaR95_return_G,VaR95_return_T,VaR95_return_C,VaR95_return_Gum,VaR95_return_F),col=c("black","blue","pink","darkorange2","red","darkmagenta"),main="VAR 95%",lwd=1))
+# VaR 90%
+plot(plot(cbind(real_port_return,VaR90_return_G,VaR90_return_T,VaR90_return_C,VaR90_return_Gum,VaR90_return_F),col=c("black","blue","pink","darkorange2","red","darkmagenta"),main="VAR 90%",lwd=1))
+```
+
+
+## HISTORICAL VAR (HS) AND PARAMETRIC VAR (VC)
+```{r}
+CTG_BT<-read.csv('C:/Users/Win 10/Documents/RISKY PORTFOLIO/excel_ctg - Copy.csv')
+MSN_BT<-read.csv('C:/Users/Win 10/Documents/RISKY PORTFOLIO/excel_msn - Copy.csv')
+VIC_BT<-read.csv('C:/Users/Win 10/Documents/RISKY PORTFOLIO/excel_vic - Copy.csv')
+VNM_BT<-read.csv('C:/Users/Win 10/Documents/RISKY PORTFOLIO/excel_vnm - Copy.csv')
+
+CTG_BT<-cleandata(CTG_BT)
+MSN_BT<-cleandata(MSN_BT)
+VIC_BT<-cleandata(VIC_BT)
+VNM_BT<-cleandata(VNM_BT)
+
+CTG_log_diff_BT<-log_diff(CTG_BT)
+MSN_log_diff_BT<-log_diff(MSN_BT)
+VIC_log_diff_BT<-log_diff(VIC_BT)
+VNM_log_diff_BT<-log_diff(VNM_BT)
+
+real_port_return_BT<- (weight[1]*CTG_log_diff_BT)+(weight[2]*MSN_log_diff_BT)+(weight[3]*VIC_log_diff_BT)+(weight[4]*VNM_log_diff_BT)
+
+```
+
+```{r}
+# HISTORICAL VAR
+VaR99_HS=VaR95_HS=VaR90_HS<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_G)))
+
+for (i in 457:709)
+{
+  VaR99_HS[i-456]<-quantile(real_port_return_BT[i:(i+1250)],p=0.01)
+  VaR95_HS[i-456]<-quantile(real_port_return_BT[i:(i+1250)],p=0.05)
+  VaR90_HS[i-456]<-quantile(real_port_return_BT[i:(i+1250)],p=0.1)
+}
+```
+
+```{r}
+# Plotting
+layout(matrix(c(1,2,3,4),2,2,byrow = T))
+VaRplot(0.01,real_port_return,VaR99_HS)
+VaRplot(0.05,real_port_return,VaR95_HS)
+VaRplot(0.1,real_port_return,VaR90_HS)
+
+layout(matrix(c(1),1,1))
+plot(cbind(real_port_return,VaR99_HS,VaR95_HS,VaR90_HS),ylim=c(-0.07,0.06),col=c("black","deeppink3","darkorange2","blue"),main="HISTORICAL VAR",lwd=1)
+addLegend("topright", c("True return", "VaR 99%","VaR 95%","VaR 90%"),
+       c("black","deeppink3","darkorange2","blue"), lty=1, cex=0.7)
+```
+
+```{r}
+# VARIANCE COVARIANCE VAR
+VaR99_VC=VaR95_VC=VaR90_VC<-xts(matrix(rep(1,m),ncol=1),order.by=index((port_return_G)))
+
+for (i in 457:709)
+{
+  mean<-mean(real_port_return_BT[i:(i+1250)])
+  SD<-sd(real_port_return_BT[i:(i+1250)])
+  VaR99_VC[i-456]<-mean+(qnorm(0.01)*SD)
+  VaR95_VC[i-456]<-mean+(qnorm(0.05)*SD)
+  VaR90_VC[i-456]<-mean+(qnorm(0.1)*SD)
+}
+```
+
+```{r}
+# Plotting
+layout(matrix(c(1,2,3,4),2,2,byrow = T))
+VaRplot(0.01,real_port_return,VaR99_VC)
+VaRplot(0.05,real_port_return,VaR95_VC)
+VaRplot(0.1,real_port_return,VaR90_VC)
+
+layout(matrix(c(1),1,1))
+plot(cbind(real_port_return,VaR99_VC,VaR95_VC,VaR90_VC),ylim=c(-0.07,0.06),col=c("black","deeppink3","darkorange2","blue"),main="PARAMETRIC VAR",lwd=1)
+addLegend("topright", c("True return", "VaR 99%","VaR 95%","VaR 90%"),
+       c("black","deeppink3","darkorange2","blue"), lty=1, cex=0.7)
+```
+
+
+#### KUPIEC'S PROPORTION OF FAILURE TEST (UNCONDITIONAL) AND CHRISTOFFERSEN'S INDEPENDENCE TEST (CONDITIONAL)
+```{r}
+## we test the hypothesis at anpha= 5% significance level 
+
+# Gaussian Copula
+test1_99_G<-VaRTest(0.01,real_port_return,VaR99_return_G)
+test1_95_G<-VaRTest(0.05,real_port_return,VaR95_return_G)
+test1_90_G<-VaRTest(0.1,real_port_return,VaR90_return_G)
+
+# T Copula
+test1_99_T<-VaRTest(0.01,real_port_return,VaR99_return_T)
+test1_95_T<-VaRTest(0.05,real_port_return,VaR95_return_T)
+test1_90_T<-VaRTest(0.1,real_port_return,VaR90_return_T)
+
+# Clayton Copula
+test1_99_C<-VaRTest(0.01,real_port_return,VaR99_return_C)
+test1_95_C<-VaRTest(0.05,real_port_return,VaR95_return_C)
+test1_90_C<-VaRTest(0.1,real_port_return,VaR90_return_C)
+
+# Gumbell Copula
+test1_99_Gum<-VaRTest(0.01,real_port_return,VaR99_return_Gum)
+test1_95_Gum<-VaRTest(0.05,real_port_return,VaR95_return_Gum)
+test1_90_Gum<-VaRTest(0.1,real_port_return,VaR90_return_Gum)
+
+# Frank Copula
+test1_99_F<-VaRTest(0.01,real_port_return,VaR99_return_F)
+test1_95_F<-VaRTest(0.05,real_port_return,VaR95_return_F)
+test1_90_F<-VaRTest(0.1,real_port_return,VaR90_return_F)
+```
+
+```{r}
+test1_99_HS<-VaRTest(0.01,real_port_return,VaR99_HS)
+test1_95_HS<-VaRTest(0.05,real_port_return,VaR95_HS)
+test1_90_HS<-VaRTest(0.1,real_port_return,VaR90_HS)
+
+test1_99_VC<-VaRTest(0.01,real_port_return,VaR99_VC)
+test1_95_VC<-VaRTest(0.05,real_port_return,VaR95_VC)
+test1_90_VC<-VaRTest(0.1,real_port_return,VaR90_VC)
+```
+
+
+#### VAR DURATION TEST OF CHRISTOFFERSEN 
+```{r}
+## we test the hypothesis at anpha= 5% significance level 
+
+# Gaussian Copula
+test2_99_G<-VaRDurTest(0.01,real_port_return,VaR99_return_G)
+test2_95_G<-VaRDurTest(0.05,real_port_return,VaR95_return_G)
+test2_90_G<-VaRDurTest(0.1,real_port_return,VaR90_return_G)
+
+# T Copula
+test2_99_T<-VaRDurTest(0.01,real_port_return,VaR99_return_T)
+test2_95_T<-VaRDurTest(0.05,real_port_return,VaR95_return_T)
+test2_90_T<-VaRDurTest(0.1,real_port_return,VaR90_return_T)
+
+# Clayton Copula
+test2_99_C<-VaRDurTest(0.01,real_port_return,VaR99_return_C)
+test2_95_C<-VaRDurTest(0.05,real_port_return,VaR95_return_C)
+test2_90_C<-VaRDurTest(0.1,real_port_return,VaR90_return_C)
+
+# Gumbell Copula
+test2_99_Gum<-VaRDurTest(0.01,real_port_return,VaR99_return_Gum)
+test2_95_Gum<-VaRDurTest(0.05,real_port_return,VaR95_return_Gum)
+test2_90_Gum<-VaRDurTest(0.1,real_port_return,VaR90_return_Gum)
+
+# Frank Copula
+test2_99_F<-VaRDurTest(0.01,real_port_return,VaR99_return_F)
+test2_95_F<-VaRDurTest(0.05,real_port_return,VaR95_return_F)
+test2_90_F<-VaRDurTest(0.1,real_port_return,VaR90_return_F)
+```
+
+```{r}
+test2_99_HS<-VaRDurTest(0.01,real_port_return,VaR99_HS)
+test2_95_HS<-VaRDurTest(0.05,real_port_return,VaR95_HS)
+test2_90_HS<-VaRDurTest(0.1,real_port_return,VaR90_HS)
+
+test2_99_VC<-VaRDurTest(0.01,real_port_return,VaR99_VC)
+test2_95_VC<-VaRDurTest(0.05,real_port_return,VaR95_VC)
+test2_90_VC<-VaRDurTest(0.1,real_port_return,VaR90_VC)
+```
+
+```{r}
+# Gaussian Copula
+Kupiec_G<-c(test1_99_G$uc.LRp,test1_99_G$uc.Decision,test1_95_G$uc.LRp,test1_95_G$uc.Decision,test1_90_G$uc.LRp,test1_90_G$uc.Decision)
+CI_G<-c(test1_99_G$cc.LRp,test1_99_G$cc.Decision,test1_95_G$cc.LRp,test1_95_G$cc.Decision,test1_90_G$cc.LRp,test1_90_G$cc.Decision)
+CD_G<-c(test2_99_G$LRp,test2_99_G$Decision,test2_95_G$LRp,test2_95_G$Decision,test2_90_G$LRp,test2_90_G$Decision)
+
+rbind(Kupiec_G,CI_G,CD_G)
+
+# T-Student Copula
+Kupiec_T<-c(test1_99_T$uc.LRp,test1_99_T$uc.Decision,test1_95_T$uc.LRp,test1_95_T$uc.Decision,test1_90_T$uc.LRp,test1_90_T$uc.Decision)
+CI_T<-c(test1_99_T$cc.LRp,test1_99_T$cc.Decision,test1_95_T$cc.LRp,test1_95_T$cc.Decision,test1_90_T$cc.LRp,test1_90_T$cc.Decision)
+CD_T<-c(test2_99_T$LRp,test2_99_T$Decision,test2_95_T$LRp,test2_95_T$Decision,test2_90_T$LRp,test2_90_T$Decision)
+
+rbind(Kupiec_T,CI_T,CD_T)
+
+# Clayton Copula
+Kupiec_C<-c(test1_99_C$uc.LRp,test1_99_C$uc.Decision,test1_95_C$uc.LRp,test1_95_C$uc.Decision,test1_90_C$uc.LRp,test1_90_C$uc.Decision)
+CI_C<-c(test1_99_C$cc.LRp,test1_99_C$cc.Decision,test1_95_C$cc.LRp,test1_95_C$cc.Decision,test1_90_C$cc.LRp,test1_90_C$cc.Decision)
+CD_C<-c(test2_99_C$LRp,test2_99_C$Decision,test2_95_C$LRp,test2_95_C$Decision,test2_90_C$LRp,test2_90_C$Decision)
+
+rbind(Kupiec_C,CI_C,CD_C)
+
+# Gumbel Copula
+Kupiec_Gum<-c(test1_99_Gum$uc.LRp,test1_99_Gum$uc.Decision,test1_95_Gum$uc.LRp,test1_95_Gum$uc.Decision,test1_90_Gum$uc.LRp,test1_90_Gum$uc.Decision)
+CI_Gum<-c(test1_99_Gum$cc.LRp,test1_99_Gum$cc.Decision,test1_95_Gum$cc.LRp,test1_95_Gum$cc.Decision,test1_90_Gum$cc.LRp,test1_90_Gum$cc.Decision)
+CD_Gum<-c(test2_99_Gum$LRp,test2_99_Gum$Decision,test2_95_Gum$LRp,test2_95_Gum$Decision,test2_90_Gum$LRp,test2_90_Gum$Decision)
+
+rbind(Kupiec_Gum,CI_Gum,CD_Gum)
+
+# Frank Copula
+Kupiec_F<-c(test1_99_F$uc.LRp,test1_99_F$uc.Decision,test1_95_F$uc.LRp,test1_95_F$uc.Decision,test1_90_F$uc.LRp,test1_90_F$uc.Decision)
+CI_F<-c(test1_99_F$cc.LRp,test1_99_F$cc.Decision,test1_95_F$cc.LRp,test1_95_F$cc.Decision,test1_90_F$cc.LRp,test1_90_F$cc.Decision)
+CD_F<-c(test2_99_F$LRp,test2_99_F$Decision,test2_95_F$LRp,test2_95_F$Decision,test2_90_F$LRp,test2_90_F$Decision)
+
+rbind(Kupiec_F,CI_F,CD_F)
+
+```
+
+```{r}
+# Note: the expected number of exceedances is as following:
+## VaR 99%: 2
+## VaR 95%: 12
+## VaR 90%: 25
+
+exceed<-c(test1_99_G$actual.exceed,test1_95_G$actual.exceed,test1_90_G$actual.exceed,test1_99_T$actual.exceed,test1_95_T$actual.exceed,test1_90_T$actual.exceed,test1_99_C$actual.exceed,test1_95_C$actual.exceed,test1_90_C$actual.exceed,test1_99_Gum$actual.exceed,test1_95_Gum$actual.exceed,test1_90_Gum$actual.exceed,test1_99_F$actual.exceed,test1_95_F$actual.exceed,test1_90_F$actual.exceed)
+Kupiec<-c(1,rep(0,8),1,0,0,1,0,0)
+Christ_1<-c(1,rep(0,8),1,rep(0,5))
+Christ_2<-rep(0,15)
+summary_backtesting<-cbind(exceed,Kupiec,Christ_1,Christ_2)
+dimnames(summary_backtesting)<-list(c("Gaussian (VaR 99%)","Gaussian (VaR 95%)","Gaussian (VaR 90%)","T-Student (VaR 99%)","T-Student (VaR 95%)","T-Student (VaR 90%)","Clayton (VaR 99%)","Clayton (VaR 95%)","Clayton (VaR 90%)","Gumbel (VaR 99%)","Gumbel (VaR 95%)","Gumbel (VaR 90%)","Frank (VaR 99%)","Frank (VaR 95%)","Frank (VaR 90%)"),c("exceedance","UC","IND","CC"))
+summary_backtesting
+
+```
+
